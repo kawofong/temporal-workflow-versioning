@@ -18,9 +18,14 @@ from activities.card import (
     persist_statement,
     send_statement_notification,
 )
+from activities.transaction_auth import (
+    check_credit_limit,
+    check_fraud,
+)
 from temporalio.client import Client
 from temporalio.worker import Worker, WorkerDeploymentConfig, WorkerDeploymentVersion
 from workflows.card import CardWorkflow
+from workflows.transaction_auth import TransactionAuthWorkflow
 
 logging.basicConfig(level=logging.INFO)
 
@@ -41,11 +46,13 @@ async def main() -> None:
         worker = Worker(
             client,
             task_queue=task_queue,
-            workflows=[CardWorkflow],
+            workflows=[CardWorkflow, TransactionAuthWorkflow],
             activities=[
                 generate_statement,
                 persist_statement,
                 send_statement_notification,
+                check_credit_limit,
+                check_fraud,
             ],
             activity_executor=activity_executor,
             deployment_config=WorkerDeploymentConfig(
