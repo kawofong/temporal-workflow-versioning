@@ -1,0 +1,57 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "temporal-server",
+            "type": "shell",
+            "command": "temporal server start-dev",
+            "isBackground": true,
+            "problemMatcher": [],
+            "presentation": {
+                "group": "server",
+                "reveal": "always",
+                "panel": "new"
+            }
+        },
+        {
+            "label": "worker1",
+            "type": "shell",
+            "command": "BUILD_ID=v1.0 uv run worker.py",
+            "options": {
+                "cwd": "${workspaceFolder}/python"
+            },
+            "isBackground": true,
+            "problemMatcher": [],
+            "presentation": {
+                "group": "workers",
+                "reveal": "always",
+                "panel": "new"
+            }
+        },
+        {
+            "label": "worker2",
+            "type": "shell",
+            "command": "echo 'Command to run: BUILD_ID=v2.0 uv run worker.py'; ${env:SHELL}",
+            "options": {
+                "cwd": "${workspaceFolder}/python"
+            },
+            "isBackground": true,
+            "problemMatcher": [],
+            "presentation": {
+                "group": "workers",
+                "reveal": "always",
+                "panel": "new"
+            }
+        },
+        {
+            "label": "Start All",
+            "dependsOn": ["temporal-server", "worker1", "worker2"],
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}
+
