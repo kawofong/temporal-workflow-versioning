@@ -77,7 +77,10 @@ class CardWorkflow:
     # -------------------------------------------------------------------------
 
     @workflow.run
-    async def run(self, account_id: str, cycle: int = 1) -> None:
+    async def run(
+        self, account_id: str, cycle: int = 1, rewards_points: int = 0
+    ) -> None:
+        self.rewards_points = rewards_points
         while True:
             workflow.logger.info(
                 f"Billing cycle {cycle} started for account {account_id} "
@@ -137,14 +140,14 @@ class CardWorkflow:
                 f"New deployment version available — upgrading at cycle {cycle} CaN boundary"
             )
             workflow.continue_as_new(
-                args=[account_id, cycle],
+                args=[account_id, cycle, self.rewards_points],
                 initial_versioning_behavior=ContinueAsNewVersioningBehavior.AUTO_UPGRADE,
             )
         else:
             workflow.logger.info(
                 f"History threshold reached — resetting history at cycle {cycle} CaN boundary"
             )
-            workflow.continue_as_new(args=[account_id, cycle])
+            workflow.continue_as_new(args=[account_id, cycle, self.rewards_points])
 
 
 async def main() -> None:

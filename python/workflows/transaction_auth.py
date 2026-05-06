@@ -12,7 +12,6 @@ with workflow.unsafe.imports_passed_through():
         check_credit_limit,
         check_fraud,
     )
-
     from workflows.card import CardWorkflow
 
 # Demo: pause between the credit check and fraud screen so the workflow
@@ -50,7 +49,6 @@ class TransactionAuthWorkflow:
             )
             return AuthResult(
                 approved=False,
-                auth_code=None,
                 decline_reason=f"fraud_risk:{','.join(fraud_result.flags)}",
             )
 
@@ -67,7 +65,6 @@ class TransactionAuthWorkflow:
             )
             return AuthResult(
                 approved=False,
-                auth_code=None,
                 decline_reason="insufficient_credit",
             )
 
@@ -85,7 +82,6 @@ class TransactionAuthWorkflow:
         #     )
         #     return AuthResult(
         #         approved=False,
-        #         auth_code=None,
         #         decline_reason="insufficient_credit",
         #     )
 
@@ -107,7 +103,6 @@ class TransactionAuthWorkflow:
         #     )
         #     return AuthResult(
         #         approved=False,
-        #         auth_code=None,
         #         decline_reason=f"fraud_risk:{','.join(fraud_result.flags)}",
         #     )
 
@@ -130,4 +125,5 @@ class TransactionAuthWorkflow:
             f"approved={result.approved}"
         )
 
+        return result
         return result
