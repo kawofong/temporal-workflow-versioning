@@ -157,7 +157,7 @@ async def main() -> None:
     namespace = os.environ.get("TEMPORAL_NAMESPACE", "default")
     task_queue = os.environ.get("TASK_QUEUE", "card-task-queue")
     account_id = os.environ.get("ACCOUNT_ID", "ACC-001")
-    workflow_id = f"card-{account_id}"
+    workflow_id = f"card/{account_id}"
 
     client = await Client.connect(address, namespace=namespace)
 

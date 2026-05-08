@@ -18,21 +18,25 @@ from activities.card import (
     persist_statement,
     send_statement_notification,
 )
-from activities.transaction_auth import (
-    check_credit_limit,
-    check_fraud,
+from activities.transaction_auth import check_credit_limit, check_fraud
+from activities.transaction_dispute import (
+    evaluate_dispute,
+    finalize_dispute,
+    issue_provisional_credit,
+    notify_merchant,
 )
 from temporalio.client import Client
 from temporalio.worker import Worker, WorkerDeploymentConfig, WorkerDeploymentVersion
 from workflows.card import CardWorkflow
 from workflows.simulation import SimulationWorkflow
 from workflows.transaction_auth import TransactionAuthWorkflow
+from workflows.transaction_dispute import TransactionDisputeWorkflow
 
 logging.basicConfig(level=logging.INFO)
 
 
 async def main() -> None:
-    build_id = os.environ.get("BUILD_ID")
+    build_id = os.environ.get("BUILD_ID", "v1.0")
     if not build_id:
         raise ValueError("BUILD_ID environment variable is required")
 
@@ -47,13 +51,22 @@ async def main() -> None:
         worker = Worker(
             client,
             task_queue=task_queue,
-            workflows=[CardWorkflow, TransactionAuthWorkflow, SimulationWorkflow],
+            workflows=[
+                CardWorkflow,
+                TransactionAuthWorkflow,
+                TransactionDisputeWorkflow,
+                SimulationWorkflow,
+            ],
             activities=[
                 generate_statement,
                 persist_statement,
                 send_statement_notification,
                 check_credit_limit,
                 check_fraud,
+                issue_provisional_credit,
+                notify_merchant,
+                evaluate_dispute,
+                finalize_dispute,
             ],
             activity_executor=activity_executor,
             deployment_config=WorkerDeploymentConfig(
