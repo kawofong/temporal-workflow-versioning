@@ -13,6 +13,7 @@ Environment variables:
 import asyncio
 import logging
 import os
+from dataclasses import dataclass, field
 from datetime import timedelta
 
 from temporalio import workflow
@@ -28,6 +29,15 @@ with workflow.unsafe.imports_passed_through():
         persist_statement,
         send_statement_notification,
     )
+    from activities.transaction_dispute import DisputeResult
+
+
+@dataclass
+class CardWorkflowInput:
+    account_id: str
+    cycle: int = 1
+    rewards_points: int = 0
+    disputes: dict[str, DisputeResult] = field(default_factory=dict)
 
 # Compressed to 30 seconds for demo purposes (represents one monthly billing cycle).
 BILLING_CYCLE_DURATION = timedelta(seconds=30)
@@ -50,7 +60,7 @@ class CardWorkflow:
     def __init__(self) -> None:
         self._pending_transactions: list[Transaction] = []
         self.rewards_points: int = 0
-
+        self._disputes: dict[str, DisputeResult] = {}
     # -------------------------------------------------------------------------
     # Signal handler
     # -------------------------------------------------------------------------
@@ -63,6 +73,12 @@ class CardWorkflow:
         )
         self._pending_transactions.append(transaction)
 
+    @workflow.signal
+    def record_dispute(self, dispute_id: str, dispute_result: DisputeResult) -> None:
+        """Record a resolved dispute."""
+        workflow.logger.info(f"Dispute resolved for transaction {dispute_id}.")
+        self._disputes[dispute_id] = dispute_result
+
     # -------------------------------------------------------------------------
     # Query handlers
     # -------------------------------------------------------------------------
@@ -72,15 +88,21 @@ class CardWorkflow:
         """Return rewards points accumulated so far."""
         return self.rewards_points
 
+    @workflow.query
+    def get_dispute(self) -> dict[str, DisputeResult]:
+        """Return the IDs of all disputes."""
+        return self._disputes
+
     # -------------------------------------------------------------------------
     # Main run loop
     # -------------------------------------------------------------------------
 
     @workflow.run
-    async def run(
-        self, account_id: str, cycle: int = 1, rewards_points: int = 0
-    ) -> None:
-        self.rewards_points = rewards_points
+    async def run(self, input: CardWorkflowInput) -> None:
+        self.rewards_points = input.rewards_points
+        self._disputes = dict(input.disputes)
+        account_id = input.account_id
+        cycle = input.cycle
         while True:
             workflow.logger.info(
                 f"Billing cycle {cycle} started for account {account_id} "
@@ -135,19 +157,25 @@ class CardWorkflow:
 
     def _do_continue_as_new(self, account_id: str, cycle: int) -> None:
         """Raise ContinueAsNew, upgrading to the new deployment version if available."""
+        input = CardWorkflowInput(
+            account_id=account_id,
+            cycle=cycle,
+            rewards_points=self.rewards_points,
+            disputes=self._disputes,
+        )
         if workflow.info().is_target_worker_deployment_version_changed():
             workflow.logger.info(
                 f"New deployment version available — upgrading at cycle {cycle} CaN boundary"
             )
             workflow.continue_as_new(
-                args=[account_id, cycle, self.rewards_points],
+                args=[input],
                 initial_versioning_behavior=ContinueAsNewVersioningBehavior.AUTO_UPGRADE,
             )
         else:
             workflow.logger.info(
                 f"History threshold reached — resetting history at cycle {cycle} CaN boundary"
             )
-            workflow.continue_as_new(args=[account_id, cycle, self.rewards_points])
+            workflow.continue_as_new(args=[input])
 
 
 async def main() -> None:
@@ -163,7 +191,7 @@ async def main() -> None:
 
     handle = await client.start_workflow(
         CardWorkflow.run,
-        args=[account_id],
+        args=[CardWorkflowInput(account_id=account_id)],
         id=workflow_id,
         task_queue=task_queue,
     )

@@ -5,6 +5,7 @@ from temporalio import workflow
 from temporalio.common import VersioningBehavior
 
 with workflow.unsafe.imports_passed_through():
+    from activities.transaction_dispute import issue_provisional_credit  # TODO (v2)
     from activities.transaction_dispute import (
         DisputeEvaluation,
         DisputeReasonCode,
@@ -12,15 +13,15 @@ with workflow.unsafe.imports_passed_through():
         DisputeResult,
         evaluate_dispute,
         finalize_dispute,
-        issue_provisional_credit,
         notify_merchant,
     )
+    from workflows.card import CardWorkflow
 
 # Compressed for demo purposes (represents 30 days in production).
 MERCHANT_RESPONSE_WINDOW = timedelta(seconds=60)
 
 # How long the workflow waits for the cardholder to confirm before cancelling.
-SUBMISSION_TIMEOUT = timedelta(seconds=30)
+SUBMISSION_TIMEOUT = timedelta(seconds=15)
 
 
 @workflow.defn(versioning_behavior=VersioningBehavior.AUTO_UPGRADE)
@@ -67,6 +68,14 @@ class TransactionDisputeWorkflow:
         """Return the current processing stage of this dispute."""
         return self._status
 
+    async def _record_dispute_on_card(
+        self, card_id: str, dispute_id: str, result: DisputeResult
+    ) -> None:
+        card_handle = workflow.get_external_workflow_handle_for(
+            CardWorkflow.run, f"card/{card_id}"
+        )
+        await card_handle.signal(CardWorkflow.record_dispute, args=[dispute_id, result])
+
     # ── Main run ──────────────────────────────────────────────────────────────
 
     @workflow.run
@@ -89,7 +98,11 @@ class TransactionDisputeWorkflow:
                 f"(transaction={request.transaction_id})"
             )
             self._status = "cancelled"
-            return DisputeResult(outcome="cancelled", credit_amount=0.0)
+            result = DisputeResult(outcome="cancelled", credit_amount=0.0)
+            await self._record_dispute_on_card(
+                request.card_id, workflow.info().workflow_id, result
+            )
+            return result
 
         # # TODO (v2): business requested to issue provisional credit for customers
         # if workflow.patched("add-provisional-credit"):
@@ -143,7 +156,14 @@ class TransactionDisputeWorkflow:
             f"outcome={evaluation.outcome} credit=${credit_amount:.2f}"
         )
 
-        return DisputeResult(outcome=evaluation.outcome, credit_amount=credit_amount)
+        result = DisputeResult(outcome=evaluation.outcome, credit_amount=credit_amount)
+
+        # ── Signal the CardWorkflow with the dispute outcome ────────────
+        await self._record_dispute_on_card(
+            request.card_id, workflow.info().workflow_id, result
+        )
+
+        return result
 
 
 async def main() -> None:
@@ -183,4 +203,10 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    asyncio.run(main())
+    asyncio.run(main())
+    asyncio.run(main())
+    asyncio.run(main())
+    asyncio.run(main())
+    asyncio.run(main())
     asyncio.run(main())

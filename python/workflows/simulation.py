@@ -9,7 +9,7 @@ from temporalio.common import VersioningBehavior
 
 with workflow.unsafe.imports_passed_through():
     from activities.transaction_auth import AuthRequest
-    from workflows.card import CardWorkflow
+    from workflows.card import CardWorkflow, CardWorkflowInput
     from workflows.transaction_auth import TransactionAuthWorkflow
     from workflows.transaction_dispute import TransactionDisputeWorkflow
 
@@ -52,7 +52,7 @@ class SimulationWorkflow:
             for account_id in account_ids:
                 await workflow.start_child_workflow(
                     CardWorkflow.run,
-                    args=[account_id],
+                    args=[CardWorkflowInput(account_id=account_id)],
                     id=f"card/{account_id}",
                     parent_close_policy=workflow.ParentClosePolicy.ABANDON,
                 )
