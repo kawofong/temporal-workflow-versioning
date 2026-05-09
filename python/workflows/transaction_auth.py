@@ -12,7 +12,9 @@ with workflow.unsafe.imports_passed_through():
         check_credit_limit,
         check_fraud,
     )
+    from activities.transaction_dispute import DisputeRequest
     from workflows.card import CardWorkflow
+    from workflows.transaction_dispute import TransactionDisputeWorkflow
 
 # Demo: pause between the credit check and fraud screen so the workflow
 # remains open long enough to demonstrate PINNED behaviour during a v2 deploy.
@@ -115,6 +117,22 @@ class TransactionAuthWorkflow:
             Transaction(amount=request.amount, merchant=request.merchant_name),
         )
 
+        # After each transaction authorization, start a transaction dispute workflow
+        # to track potential transaction disputes.
+        dispute_workflow_id = f"{workflow.info().workflow_id}/dispute"
+        _ = await workflow.start_child_workflow(
+            TransactionDisputeWorkflow.run,
+            args=[
+                DisputeRequest(
+                    card_id=request.card_id,
+                    transaction_id=request.transaction_id,
+                    amount=request.amount,
+                ),
+            ],
+            id=dispute_workflow_id,
+            parent_close_policy=workflow.ParentClosePolicy.ABANDON,
+        )
+
         result = AuthResult(
             approved=True,
             decline_reason=None,
@@ -125,5 +143,4 @@ class TransactionAuthWorkflow:
             f"approved={result.approved}"
         )
 
-        return result
         return result

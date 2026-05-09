@@ -11,6 +11,7 @@ with workflow.unsafe.imports_passed_through():
     from activities.transaction_auth import AuthRequest
     from workflows.card import CardWorkflow
     from workflows.transaction_auth import TransactionAuthWorkflow
+    from workflows.transaction_dispute import TransactionDisputeWorkflow
 
 NUM_CARD_ACCOUNTS = 3
 
@@ -62,35 +63,60 @@ class SimulationWorkflow:
 
         # ── Transaction generation loop ───────────────────────────────────
         tx_counter = 0
+        undisputed_workflow_ids = []
         while not workflow.info().is_continue_as_new_suggested():
-            # Slowing down the simulation for demo purposes
-            if tx_counter % NUM_CARD_ACCOUNTS == 0:
-                await workflow.sleep(timedelta(seconds=1))
-
             account_id = rng.choice(account_ids)
             merchant_name, merchant_category = rng.choice(MERCHANTS)
             amount = round(rng.uniform(10.0, 600.0), 2)
-            tx_id = f"transaction/auth/{str(workflow.uuid4())}"
+            transaction_id = str(workflow.uuid4())
+            auth_workflow_id = f"transaction/auth/{transaction_id}"
 
             await workflow.start_child_workflow(
                 TransactionAuthWorkflow.run,
                 args=[
                     AuthRequest(
                         card_id=account_id,
+                        transaction_id=transaction_id,
                         merchant_name=merchant_name,
                         merchant_category=merchant_category,
                         amount=amount,
                     )
                 ],
-                id=tx_id,
+                id=auth_workflow_id,
                 parent_close_policy=workflow.ParentClosePolicy.ABANDON,
             )
 
+            undisputed_workflow_ids.append(auth_workflow_id)
+
             workflow.logger.info(
-                f"Transaction {tx_counter} dispatched — id={tx_id} "
+                f"Transaction {tx_counter} dispatched — id={auth_workflow_id} "
                 f"card={account_id} merchant={merchant_name!r} amount=${amount:.2f}"
             )
             tx_counter += 1
+
+            # Every 2 transactions, randomly choose a transaction to dispute.
+            if tx_counter % 2 == 0:
+                auth_wf_id = undisputed_workflow_ids.pop(
+                    rng.randint(0, len(undisputed_workflow_ids) - 1)
+                )
+                dispute_workflow_id = f"{auth_wf_id}/dispute"
+                await workflow.sleep(timedelta(seconds=3))
+                handle = workflow.get_external_workflow_handle(dispute_workflow_id)
+                dispute_reasons = [
+                    "unauthorized",
+                    "not_received",
+                    "duplicate",
+                    "quality",
+                ]
+                try:
+                    await handle.signal(
+                        TransactionDisputeWorkflow.submit_dispute,
+                        rng.choice(dispute_reasons),
+                    )
+                except Exception as e:
+                    workflow.logger.info(f"Error submitting dispute. Skipping: {e}")
+                    workflow.logger.info(f"Error type: {type(e)}")
+                    continue
 
         # ── Continue-as-New: preserve account IDs, skip setup ────────────
         workflow.logger.info(

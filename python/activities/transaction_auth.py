@@ -8,6 +8,7 @@ from temporalio import activity
 @dataclass
 class AuthRequest:
     card_id: str
+    transaction_id: str
     merchant_name: str
     merchant_category: str
     amount: float
@@ -34,7 +35,6 @@ def check_credit_limit(card_id: str, amount: float) -> bool:
         f"Credit limit check — card={card_id} amount=${amount:.2f} "
         f"result={'ok' if approved else 'declined (limit)'}"
     )
-    sleep(1)  # Simulate a delay
     return approved
 
 
@@ -57,7 +57,7 @@ def check_fraud(
         f"amount=${amount:.2f} score={score} flags={flags} "
         f"result={'approved' if approved else 'declined (fraud)'}"
     )
-    sleep(1)  # Simulate a delay
+    sleep(0.25)  # Simulate a delay
     return FraudResult(score=score, flags=flags, approved=approved)
 
 
@@ -69,5 +69,5 @@ def record_authorization(card_id: str, amount: float, approved: bool) -> str | N
         f"Authorization recorded — card={card_id} amount=${amount:.2f} "
         f"approved={approved} auth_code={auth_code}"
     )
-    sleep(1)  # Simulate a delay
+    sleep(0.25)  # Simulate a delay
     return auth_code

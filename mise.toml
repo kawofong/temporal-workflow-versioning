@@ -7,3 +7,13 @@ description = "Run Temporal Python worker v1"
 dir = "python"
 run = "uv run worker.py"
 env = { BUILD_ID = "v1.0" }
+
+[tasks."set-current-version"]
+description = "Set the current worker deployment version"
+usage = 'arg "<build-id>" help="Worker build ID to set as current (e.g. v1.0, v2.0)"'
+run = "temporal worker deployment set-current-version --deployment-name card-service --build-id ${usage_build_id?} --yes"
+
+[tasks."simulation"]
+description = "Run the simulation Workflow"
+dir = "python"
+run = "uv run -m workflows.simulation"

@@ -6,7 +6,23 @@
             "type": "shell",
             "command": "temporal server start-dev",
             "isBackground": true,
-            "problemMatcher": [],
+            "problemMatcher": [
+                {
+                    "pattern": [
+                        {
+                            "regexp": "^(NOMATCH)(.*)$",
+                            "file": 1,
+                            "message": 2,
+                            "kind": "file"
+                        }
+                    ],
+                    "background": {
+                        "activeOnStart": true,
+                        "beginsPattern": "Temporal CLI",
+                        "endsPattern": "Temporal Server:"
+                    }
+                }
+            ],
             "presentation": {
                 "group": "server",
                 "reveal": "always",
@@ -14,14 +30,28 @@
             }
         },
         {
-            "label": "worker1",
+            "label": "worker-v1",
             "type": "shell",
-            "command": "BUILD_ID=v1.0 uv run worker.py",
-            "options": {
-                "cwd": "${workspaceFolder}/python"
-            },
+            "command": "source ~/.zshrc || mise run worker:v1",
             "isBackground": true,
-            "problemMatcher": [],
+            "dependsOn": ["temporal-server"],
+            "problemMatcher": [
+                {
+                    "pattern": [
+                        {
+                            "regexp": "^(NOMATCH)(.*)$",
+                            "file": 1,
+                            "message": 2,
+                            "kind": "file"
+                        }
+                    ],
+                    "background": {
+                        "activeOnStart": true,
+                        "beginsPattern": "worker:v1",
+                        "endsPattern": "Worker started"
+                    }
+                }
+            ],
             "presentation": {
                 "group": "workers",
                 "reveal": "always",
@@ -44,8 +74,34 @@
             }
         },
         {
-            "label": "Start All",
-            "dependsOn": ["temporal-server", "worker1", "worker2"],
+            "label": "start-simulation",
+            "type": "shell",
+            "command": "source ~/.zshrc || mise run simulation",
+            "isBackground": true,
+            "dependsOn": ["worker-v1"],
+            "problemMatcher": [],
+            "presentation": {
+                "group": "starters",
+                "reveal": "always",
+                "panel": "new"
+            }
+        },
+        {
+            "label": "set-current-version-v1",
+            "type": "shell",
+            "command": "source ~/.zshrc || mise run set-current-version v1.0",
+            "isBackground": true,
+            "dependsOn": ["worker-v1"],
+            "problemMatcher": [],
+            "presentation": {
+                "group": "starters",
+                "reveal": "always",
+                "panel": "new"
+            }
+        },
+        {
+            "label": "Start Simulation V1",
+            "dependsOn": ["temporal-server", "worker-v1", "start-simulation", "set-current-version-v1"],
             "problemMatcher": [],
             "group": {
                 "kind": "build",
