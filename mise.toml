@@ -1,6 +1,7 @@
 [tools]
 python = "3.14.4"
 uv = "0.10.12"
+"npm:@marp-team/marp-cli" = "4.4.0"
 
 [tasks."worker:v1"]
 description = "Run Temporal Python worker v1"
@@ -22,3 +23,11 @@ run = "uv run -m workflows.simulation"
 description = "Run Temporal workflow replay tests"
 dir = "python"
 run = "uv run pytest -v"
+
+[tasks."slides"]
+description = "Build presentation slides to presentations/dist/"
+run = "marp docs/presentations/demo.md --html --output docs/presentations/demo.html"
+
+[tasks."slides:watch"]
+description = "Serve presentation slides with live reload"
+run = "marp --server docs/presentations/"
