@@ -17,3 +17,8 @@ run = "temporal worker deployment set-current-version --deployment-name card-ser
 description = "Run the simulation Workflow"
 dir = "python"
 run = "uv run -m workflows.simulation"
+
+[tasks."test"]
+description = "Run Temporal workflow replay tests"
+dir = "python"
+run = "uv run pytest -v"

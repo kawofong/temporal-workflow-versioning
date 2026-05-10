@@ -119,7 +119,7 @@ class TransactionAuthWorkflow:
 
         # After each transaction authorization, start a transaction dispute workflow
         # to track potential transaction disputes.
-        dispute_workflow_id = f"{workflow.info().workflow_id}/dispute"
+        dispute_workflow_id = f"transaction/auth/{request.transaction_id}/dispute"
         _ = await workflow.start_child_workflow(
             TransactionDisputeWorkflow.run,
             args=[
@@ -143,4 +143,6 @@ class TransactionAuthWorkflow:
             f"approved={result.approved}"
         )
 
+        return result
+        return result
         return result

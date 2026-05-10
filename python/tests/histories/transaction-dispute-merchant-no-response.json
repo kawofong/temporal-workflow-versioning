@@ -1,0 +1,356 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventTime": "2026-05-10T00:24:20.554307Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId": "1103701",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "TransactionDisputeWorkflow"
+        },
+        "parentWorkflowNamespace": "default",
+        "parentWorkflowNamespaceId": "019e0f3e-0b8e-7dd3-8e12-8bc236bb1388",
+        "parentWorkflowExecution": {
+          "workflowId": "transaction/auth/a52a6e4a-e163-4c47-a875-0b9cf8a5bccf",
+          "runId": "019e0f45-4b9c-7d4e-9537-41714d1fa5b7"
+        },
+        "parentInitiatedEventId": "22",
+        "taskQueue": {
+          "name": "card-task-queue",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJhbW91bnQiOjgxLjI1LCJjYXJkX2lkIjoiYzYyY2MxMGYtYWVlNi00YmRhLWJhYzEtMGI1YTdhZDMzM2ViIiwidHJhbnNhY3Rpb25faWQiOiJhNTJhNmU0YS1lMTYzLTRjNDctYTg3NS0wYjljZjhhNWJjY2YifQ=="
+            }
+          ]
+        },
+        "workflowRunTimeout": "0s",
+        "workflowTaskTimeout": "10s",
+        "originalExecutionRunId": "019e0f45-4d4a-74ab-922f-345095aa95f2",
+        "firstExecutionRunId": "019e0f45-4d4a-74ab-922f-345095aa95f2",
+        "attempt": 1,
+        "firstWorkflowTaskBackoff": "0s",
+        "memo": {},
+        "header": {},
+        "workflowId": "transaction/auth/a52a6e4a-e163-4c47-a875-0b9cf8a5bccf/dispute",
+        "rootWorkflowExecution": {
+          "workflowId": "simulation/started-by-simulation-py",
+          "runId": "67b65d3c-8e28-4173-9881-b487ccc0cc8f"
+        },
+        "priority": {},
+        "inheritedPinnedVersion": {
+          "buildId": "v1.0",
+          "deploymentName": "card-service"
+        }
+      }
+    },
+    {
+      "eventId": "2",
+      "eventTime": "2026-05-10T00:24:20.558039Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1103719",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "card-task-queue",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "3",
+      "eventTime": "2026-05-10T00:24:20.603806Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1103738",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "13398@Kas-MacBook-Pro.local",
+        "requestId": "2b28bdab-5f8d-4fd0-9fef-dfc474751315",
+        "historySizeBytes": "693",
+        "workerVersion": {
+          "buildId": "v1.0"
+        }
+      }
+    },
+    {
+      "eventId": "4",
+      "eventTime": "2026-05-10T00:24:20.608526Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1103748",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "startedEventId": "3",
+        "identity": "13398@Kas-MacBook-Pro.local",
+        "workerVersion": {
+          "buildId": "v1.0"
+        },
+        "sdkMetadata": {
+          "coreUsedFlags": [
+            3,
+            2,
+            1
+          ],
+          "sdkName": "temporal-python",
+          "sdkVersion": "1.27.0"
+        },
+        "meteringMetadata": {},
+        "versioningBehavior": "VERSIONING_BEHAVIOR_AUTO_UPGRADE",
+        "workerDeploymentName": "card-service",
+        "deploymentVersion": {
+          "buildId": "v1.0",
+          "deploymentName": "card-service"
+        }
+      }
+    },
+    {
+      "eventId": "5",
+      "eventTime": "2026-05-10T00:24:20.608551Z",
+      "eventType": "EVENT_TYPE_TIMER_STARTED",
+      "taskId": "1103749",
+      "timerStartedEventAttributes": {
+        "timerId": "1",
+        "startToFireTimeout": "15s",
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "6",
+      "eventTime": "2026-05-10T00:24:23.144245Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED",
+      "taskId": "1103792",
+      "workflowExecutionSignaledEventAttributes": {
+        "signalName": "submit_dispute",
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "InVuYXV0aG9yaXplZCI="
+            }
+          ]
+        },
+        "identity": "history-service",
+        "externalWorkflowExecution": {
+          "workflowId": "simulation/started-by-simulation-py",
+          "runId": "67b65d3c-8e28-4173-9881-b487ccc0cc8f"
+        }
+      }
+    },
+    {
+      "eventId": "7",
+      "eventTime": "2026-05-10T00:24:23.144253Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1103793",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "13398@Kas-MacBook-Pro.local-4f81c442f672427a9f1d30e121f21a98",
+          "kind": "TASK_QUEUE_KIND_STICKY",
+          "normalName": "card-task-queue"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "8",
+      "eventTime": "2026-05-10T00:24:23.145531Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1103802",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "7",
+        "identity": "13398@Kas-MacBook-Pro.local",
+        "requestId": "26e8805f-6b12-46b4-b8dd-a696ca103a47",
+        "historySizeBytes": "1271",
+        "workerVersion": {
+          "buildId": "v1.0"
+        }
+      }
+    },
+    {
+      "eventId": "9",
+      "eventTime": "2026-05-10T00:24:23.150756Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1103810",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "7",
+        "startedEventId": "8",
+        "identity": "13398@Kas-MacBook-Pro.local",
+        "workerVersion": {
+          "buildId": "v1.0"
+        },
+        "sdkMetadata": {},
+        "meteringMetadata": {},
+        "versioningBehavior": "VERSIONING_BEHAVIOR_AUTO_UPGRADE",
+        "workerDeploymentName": "card-service",
+        "deploymentVersion": {
+          "buildId": "v1.0",
+          "deploymentName": "card-service"
+        }
+      }
+    },
+    {
+      "eventId": "10",
+      "eventTime": "2026-05-10T00:24:23.150786Z",
+      "eventType": "EVENT_TYPE_TIMER_CANCELED",
+      "taskId": "1103811",
+      "timerCanceledEventAttributes": {
+        "timerId": "1",
+        "startedEventId": "5",
+        "workflowTaskCompletedEventId": "9",
+        "identity": "13398@Kas-MacBook-Pro.local"
+      }
+    },
+    {
+      "eventId": "11",
+      "eventTime": "2026-05-10T00:24:23.150800Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "taskId": "1103812",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "1",
+        "activityType": {
+          "name": "notify_merchant"
+        },
+        "taskQueue": {
+          "name": "card-task-queue",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "ImE1MmE2ZTRhLWUxNjMtNGM0Ny1hODc1LTBiOWNmOGE1YmNjZiI="
+            },
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "InVuYXV0aG9yaXplZCI="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "0s",
+        "scheduleToStartTimeout": "0s",
+        "startToCloseTimeout": "10s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "9",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2,
+          "maximumInterval": "100s"
+        },
+        "useWorkflowBuildId": true,
+        "priority": {}
+      }
+    },
+    {
+      "eventId": "12",
+      "eventTime": "2026-05-10T00:24:23.151885Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "taskId": "1104109",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "11",
+        "identity": "13398@Kas-MacBook-Pro.local",
+        "requestId": "748d96d2-3b3a-4531-9141-231d04d5bfd0",
+        "attempt": 1,
+        "workerVersion": {
+          "buildId": "v1.0"
+        }
+      }
+    },
+    {
+      "eventId": "13",
+      "eventTime": "2026-05-10T00:24:24.160053Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "taskId": "1104110",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "Ik5PVElGLUE1MkE2RTRBIg=="
+            }
+          ]
+        },
+        "scheduledEventId": "11",
+        "startedEventId": "12",
+        "identity": "13398@Kas-MacBook-Pro.local"
+      }
+    },
+    {
+      "eventId": "14",
+      "eventTime": "2026-05-10T00:24:24.160063Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1104111",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "13398@Kas-MacBook-Pro.local-4f81c442f672427a9f1d30e121f21a98",
+          "kind": "TASK_QUEUE_KIND_STICKY",
+          "normalName": "card-task-queue"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "15",
+      "eventTime": "2026-05-10T00:24:24.161773Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1104115",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "14",
+        "identity": "13398@Kas-MacBook-Pro.local",
+        "requestId": "e472a852-660f-4110-8a88-d26392e1cfa1",
+        "historySizeBytes": "2087",
+        "workerVersion": {
+          "buildId": "v1.0"
+        }
+      }
+    },
+    {
+      "eventId": "16",
+      "eventTime": "2026-05-10T00:24:24.165375Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1104119",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "14",
+        "startedEventId": "15",
+        "identity": "13398@Kas-MacBook-Pro.local",
+        "workerVersion": {
+          "buildId": "v1.0"
+        },
+        "sdkMetadata": {},
+        "meteringMetadata": {},
+        "versioningBehavior": "VERSIONING_BEHAVIOR_AUTO_UPGRADE",
+        "workerDeploymentName": "card-service",
+        "deploymentVersion": {
+          "buildId": "v1.0",
+          "deploymentName": "card-service"
+        }
+      }
+    },
+    {
+      "eventId": "17",
+      "eventTime": "2026-05-10T00:24:24.165411Z",
+      "eventType": "EVENT_TYPE_TIMER_STARTED",
+      "taskId": "1104120",
+      "timerStartedEventAttributes": {
+        "timerId": "2",
+        "startToFireTimeout": "60s",
+        "workflowTaskCompletedEventId": "16"
+      }
+    }
+  ]
+}
