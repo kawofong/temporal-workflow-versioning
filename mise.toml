@@ -25,8 +25,8 @@ dir = "python"
 run = "uv run pytest -v"
 
 [tasks."slides"]
-description = "Build presentation slides to presentations/dist/"
-run = "marp docs/presentations/demo.md --html --output docs/presentations/demo.html"
+description = "Build presentation slides to docs/presentations"
+run = "marp docs/presentations/presentation.md --html --output docs/presentations/presentation.html"
 
 [tasks."slides:watch"]
 description = "Serve presentation slides with live reload"
