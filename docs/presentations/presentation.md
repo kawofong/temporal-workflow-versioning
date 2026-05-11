@@ -946,3 +946,319 @@ card-service:v3.0 — CURRENT   (all new and upgraded executions)
 card-service:v2.0 — DRAINED   (safe to decommission)
 card-service:v1.0 — DRAINED   (already decommissioned)
 ```
+
+---
+
+<!-- _class: divider -->
+<!-- _paginate: false -->
+<!-- _backgroundColor: #1e3a5f -->
+<!-- _color: #f8fafc -->
+
+# Scenario C
+
+**Business requirement:** issue provisional credit immediately when a customer initiates a dispute.
+
+Adding a new Activity mid-execution to a **medium-lived Workflow** (days to weeks)
+
+---
+
+<span class="badge concept">concept</span>
+
+# Proposed Change in `TransactionDisputeWorkflow`
+
+**Request:** issue provisional credit to the cardholder immediately after they submit a dispute.
+
+```python
+# v1 — current logic after cardholder confirms
+await workflow.wait_condition(lambda: self._submitted, timeout=SUBMISSION_TIMEOUT)
+
+await workflow.execute_activity(notify_merchant, ...)
+```
+
+```python
+# v2 — add provisional credit between submission and merchant notification
+await workflow.wait_condition(lambda: self._submitted, timeout=SUBMISSION_TIMEOUT)
+
+await workflow.execute_activity(issue_provisional_credit, ...)  # ← NEW
+
+await workflow.execute_activity(notify_merchant, ...)
+```
+
+Dispute Workflows can run for **days or weeks**. There may be hundreds in-flight when we deploy.
+
+---
+
+<!-- _class: divider -->
+<!-- _paginate: false -->
+<!-- _backgroundColor: #1e3a5f -->
+<!-- _color: #f8fafc -->
+
+# How Would You Approach This New Business Requirement?
+
+Note: `TransactionDisputeWorkflow` is a medium-lived Workflow. There are in-flight Workflow Executions that may be waiting for a dispute initiation for up to 30 days.
+
+_Take a moment before proceeding._
+
+---
+
+<span class="badge concept">concept</span>
+
+# Versioning Decision Framework
+
+```
+Does the change alter the sequence of Commands the Workflow executes?
+│
+├── No  (e.g. change Activity logic, update config, add a Signal handler)
+│   └── Safe to redeploy — no versioning needed
+│
+└── Yes  (add, remove, or reorder Activities; change control flow)
+       │
+       How long does the Workflow run relative to your deploy frequency?
+       │
+       ├── Short  (completes before the next deploy)
+       │   └── PINNED  ·  deploy vNext, drain is trivial, no patching
+       │
+       ├── Long  (weeks – years)  +  uses Continue-as-New
+       │   └── PINNED  +  upgrade at CaN boundary  ·  no patching
+       │
+       └── Medium – Long  +  does NOT use Continue-as-New      ← we are here
+           └── AUTO_UPGRADE  +  workflow.patched()  ·  upgrade at next Workflow Task
+```
+
+<div class="note">
+Source: <a href="https://docs.temporal.io/production-deployment/worker-deployments/worker-versioning#decision-guide">Temporal docs — Worker Versioning Decision Guide</a>
+</div>
+
+---
+
+<span class="badge concept">concept</span>
+
+# Decision: Auto-upgrade + `workflow.patched()`
+
+`TransactionDisputeWorkflow` runs for days and it doesn't use CaN. We need in-flight executions to pick up new code at their **next Workflow Task**.
+
+```text
+@workflow.defn(versioning_behavior=VersioningBehavior.AUTO_UPGRADE)
+class TransactionDisputeWorkflow:
+    ...
+```
+
+<div class="note">
+Auto-upgrade Workflow requires Workflow patching.
+</div>
+
+---
+
+<span class="badge concept">concept</span>
+
+# [Patching](https://docs.temporal.io/patching)
+
+`workflow.patched()` writes a **Marker event** to Workflow History the first time it runs, then reads that Marker on subsequent replays:
+
+```python
+# v4 — safe to deploy to in-flight executions
+if workflow.patched("add-provisional-credit"):
+    await workflow.execute_activity(
+        issue_provisional_credit,
+        ...
+    )
+```
+
+| Execution | `workflow.patched()` returns | Behaviour |
+|---|---|---|
+| Started on v3, upgraded to v4 | `False` (no marker in history) | skips the block |
+| Started on v4 | `True` (marker written) | executes the block |
+
+Once **all** pre-patch executions complete, the patch can be [deprecated](https://docs.temporal.io/develop/python/workflows/versioning#deprecated-patches).
+
+---
+
+<span class="badge action">action</span>
+
+# Make the v4 Change in `TransactionDisputeWorkflow`
+
+Open `python/workflows/transaction_dispute.py` and uncomment the `workflow.patched()` block:
+
+```text
+# v4 — uncomment this block
+if workflow.patched("add-provisional-credit"):
+    await workflow.execute_activity(
+        issue_provisional_credit,
+        args=[request.card_id, request.amount],
+        start_to_close_timeout=timedelta(seconds=10),
+    )
+```
+
+---
+
+<span class="badge action">action</span>
+
+# Run the Replay Tests — Confirm They Pass
+
+In **Terminal 3**, run:
+
+```bash
+mise run test
+```
+
+<div class="ok">
+✓  test_transaction_dispute_replay PASSED<br>
+✓  test_transaction_dispute_replay_merchant_no_response PASSED<br>
+✓  test_transaction_dispute_replay_unauthorized PASSED<br>
+<br>
+All dispute replay tests pass.
+</div>
+
+`workflow.patched()` returns `False` for histories that predate the change. The new Activity is skipped on replay. The change is safe to deploy.
+
+<div class="note">
+This is what distinguishes AUTO_UPGRADE + <code>patched()</code> from a naive code change: the patch helpguard against NDEs.
+</div>
+
+---
+
+<span class="badge action">action</span>
+
+# Start Worker v4 alongside v3 — Rainbow Deployment
+
+Open **Terminal 4** and run the v4 Worker. Worker v1 and v2 are already drained and decommissioned.
+
+```bash
+BUILD_ID=v4.0 uv run worker.py
+```
+
+<div class="ok">
+✓  Worker started — deployment=card-service build_id=v4.0
+</div>
+
+```
+┌──────────────────────────────────────────────────┐
+│   Temporal Server  ·  card-task-queue            │
+└──────────────────────────────────────────────────┘
+        ▲                           ▲
+┌───────────────┐       ┌───────────────────────────┐
+│ Worker v3.0   │       │ Worker v4.0               │
+│ (polling,     │       │ (polling, not yet current) │
+│  CURRENT)     │       │                            │
+└───────────────┘       └───────────────────────────┘
+ in-flight disputes → v3.0   (no new starts yet)
+```
+
+---
+
+<span class="badge action">action</span>
+
+# Activate v4 as the Current Deployment Version
+
+In **Terminal 3**, run:
+
+```bash
+mise run set-current-version v4.0
+```
+
+```bash
+temporal worker deployment describe --name card-service
+```
+
+<div class="ok">
+✓  card-service:v4.0 — CURRENT<br>
+✓  card-service:v3.0 — DRAINING  (in-flight AUTO_UPGRADE disputes now served by v4)<br>
+✓  card-service:v2.0 — DRAINED   (decommissioned)<br>
+✓  card-service:v1.0 — DRAINED   (decommissioned)
+</div>
+
+<div class="note">
+AUTO_UPGRADE disputes migrate to v4 at their <strong>next Workflow Task</strong> — no signals or CaN needed.
+</div>
+
+---
+
+<span class="badge action">action</span>
+
+# Observe Old and New Disputes Diverging
+
+Signal an in-flight dispute (started on v3) and describe a newly started dispute:
+
+```bash
+# Signal an in-flight dispute — it will run on v4 at its next Workflow Task
+temporal workflow signal --workflow-id <existing-dispute-id> \
+  --name submit_dispute --input '"unauthorized"'
+
+# Describe a newly started dispute
+temporal workflow describe -w <new-dispute-id>
+```
+
+<div class="ok">
+✓  In-flight dispute (v3 history):  skips provisional credit  (no patch marker)<br>
+✓  New dispute (v4):                issues provisional credit  (patch marker written)
+</div>
+
+Both executions are deterministic. Both are correct for their version of history.
+
+---
+
+<span class="badge action">action</span>
+
+# Confirm v3 Drainage
+
+```bash
+temporal worker deployment describe-version \
+  --deployment-name card-service \
+  --build-id v3.0
+```
+
+<div class="ok">
+✓  DrainageStatus: drained
+</div>
+
+Once v3 is drained, all disputes have either completed or started fresh on v4. The patch guard (`workflow.patched("add-provisional-credit")`) can be deprecated in the next deploy.
+
+```
+card-service:v4.0 — CURRENT   (all new and upgraded executions)
+card-service:v3.0 — DRAINED   (safe to decommission; remove patch guard in v5)
+card-service:v2.0 — DRAINED   (already decommissioned)
+card-service:v1.0 — DRAINED   (already decommissioned)
+```
+
+---
+
+<!-- _class: divider -->
+<!-- _paginate: false -->
+<!-- _backgroundColor: #1e3a5f -->
+<!-- _color: #f8fafc -->
+
+# Recap
+
+Choosing the right Worker Versioning strategy for your Workflows
+
+---
+
+<span class="badge concept">concept</span>
+
+# Decision Guide
+
+From the [Temporal Worker Versioning Decision Guide](https://docs.temporal.io/production-deployment/worker-deployments/worker-versioning#decision-guide):
+
+| Workflow Duration | Uses Continue-as-New? | Recommended Behavior | Patching Required? | This session |
+|---|---|---|---|---|
+| **Short** (completes before next deploy) | N/A | `PINNED` | Never | Scenario A · `TransactionAuthWorkflow` |
+| **Medium** (spans multiple deploys) | No | `AUTO_UPGRADE` | Yes | Scenario C · `TransactionDisputeWorkflow` |
+| **Long** (weeks to years) | Yes | `PINNED` + upgrade on CaN | Never | Scenario B · `CardWorkflow` |
+| **Long** (weeks to years) | No | `AUTO_UPGRADE` + patching | Yes | — |
+
+Both strategies require **rainbow deployments**: old and new workers running in parallel until the old build is fully drained.
+
+---
+
+<span class="badge concept">concept</span>
+
+# Operational checklist to take home
+
+**Replay tests**
+Export Workflow Histories from production and run Replay tests in CI against every new build. A `NondeterminismError` in CI means the change is unsafe and requires versioning.
+
+**Build ID**
+Use a consistent, human-readable convention: `<service-name>:<semver>` (e.g. `card-service:v2.1.0`) or `<service-name>:<git-sha>` for continuous delivery pipelines. The build ID is permanent — once recorded in a Workflow's history it cannot be changed.
+
+**Automation**
+For teams running on Kubernetes, the [Temporal Worker Controller](https://docs.temporal.io/production-deployment/worker-deployments/kubernetes-controller) automates rainbow deployments: it manages version activation, drain monitoring, and worker shutdown without manual CLI steps. Use it to reduce the operational burden of managing multiple active versions.
