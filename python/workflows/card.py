@@ -39,6 +39,7 @@ class CardWorkflowInput:
     rewards_points: int = 0
     disputes: dict[str, DisputeResult] = field(default_factory=dict)
 
+
 # Compressed to 30 seconds for demo purposes (represents one monthly billing cycle).
 BILLING_CYCLE_DURATION = timedelta(seconds=30)
 
@@ -61,6 +62,7 @@ class CardWorkflow:
         self._pending_transactions: list[Transaction] = []
         self.rewards_points: int = 0
         self._disputes: dict[str, DisputeResult] = {}
+
     # -------------------------------------------------------------------------
     # Signal handler
     # -------------------------------------------------------------------------
@@ -121,12 +123,12 @@ class CardWorkflow:
                 start_to_close_timeout=timedelta(seconds=10),
             )
 
-            # TODO (v2): store statement in a object storage
-            await workflow.execute_activity(
-                persist_statement,
-                args=[statement],
-                start_to_close_timeout=timedelta(seconds=10),
-            )
+            # # TODO (v2): store statement in a object storage
+            # await workflow.execute_activity(
+            #     persist_statement,
+            #     args=[statement],
+            #     start_to_close_timeout=timedelta(seconds=10),
+            # )
 
             # Calculate rewards points
             self.rewards_points += int(statement.total_spend)

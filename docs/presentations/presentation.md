@@ -138,7 +138,7 @@ style: |
 <!-- _backgroundColor: #0f172a -->
 <!-- _color: #f8fafc -->
 
-# Temporal Workflow Versioning
+# Temporal Worker Versioning
 
 Deploying code changes to long-running Workflows
 without disrupting running digital processes.
@@ -284,14 +284,14 @@ temporal server start-dev
 </div>
 
 <div class="note">
-Leave *Terminal 1* running for the entire session.
+Leave <strong>Terminal 1</strong> running for the entire session.
 </div>
 
 ---
 
 <span class="badge action">action</span>
 
-# Start SDK Worker v1 and Set the Current Version
+# Start SDK Worker v1
 
 Open **Terminal 2** and run — keep this terminal running:
 
@@ -299,18 +299,27 @@ Open **Terminal 2** and run — keep this terminal running:
 mise run worker:v1          # BUILD_ID=v1.0 uv run worker.py
 ```
 
-<div class="note">
-Leave *Terminal 2* running for the entire session.
+<div class="ok">
+✓  Worker started — deployment=card-service build_id=v1.0
 </div>
 
-Open **Terminal 3** and activate the Deployment Version so new Workflow Executions are routed here:
+<div class="note">
+Leave <strong>Terminal 2</strong> running for the entire session.
+</div>
+
+---
+
+<span class="badge action">action</span>
+
+# Set the Current Deployment Version
+
+Open **Terminal 3** and activate v1.0 so new Workflow Executions are routed here:
 
 ```bash
 mise run set-current-version v1.0   # temporal worker deployment set-current-version --deployment-name card-service --build-id v1.0 --yes
 ```
 
 <div class="ok">
-✓  Worker started — deployment=card-service build_id=v1.0<br>
 ✓  card-service:v1.0 is now the Current version
 </div>
 
@@ -334,3 +343,102 @@ Switch to the Temporal UI and observe:
 - `TransactionDisputeWorkflow` instances waiting for signals
 
 **This is the live system we will deploy changes to.**
+
+---
+
+<span class="badge action">action</span>
+
+# Run the Replay Tests
+
+In **Terminal 3**, run:
+
+```bash
+mise run test               # uv run pytest -v
+```
+
+<div class="note">
+All tests pass against the current codebase — this is our baseline.
+We will revisit Replay tests later to explain how they catch
+NDEs <em>before</em> it reaches production.
+</div>
+
+---
+
+<!-- _class: divider -->
+<!-- _paginate: false -->
+<!-- _backgroundColor: #1e3a5f -->
+<!-- _color: #f8fafc -->
+
+# Scenario A
+
+**New business requirement:** persist monthly statements to object storage for compliance.
+
+Add a new Activity to a **long-running Entity Workflow** (which uses Continue-as-New)
+
+---
+
+<span class="badge concept">concept</span>
+
+# Propose Change in `CardWorkflow`
+
+**Request:** persist each billing statement to object storage before sending the notification.
+
+```python
+# v1 — current logic during each billing cycle
+statement = await workflow.execute_activity(generate_statement, ...)
+self.rewards_points += int(statement.total_spend)
+await workflow.execute_activity(send_statement_notification, ...)
+```
+
+```python
+# v2 — what we want to ship
+statement = await workflow.execute_activity(generate_statement, ...)
+await workflow.execute_activity(persist_statement, ...) # <- NEW ACTIVITY
+self.rewards_points += int(statement.total_spend)
+await workflow.execute_activity(send_statement_notification, ...)
+```
+
+`CardWorkflow` has been running for cycles already, so we cannot simply re-deploy.
+
+---
+
+<!-- _class: divider -->
+<!-- _paginate: false -->
+<!-- _backgroundColor: #1e3a5f -->
+<!-- _color: #f8fafc -->
+
+# How Would You Approach this New Business Requirement?
+
+Note: `CardWorkflow` is an Entity Workflow that runs forever. There are in-flight Workflow Executions.
+
+_Take a moment before proceeding._
+
+---
+
+<span class="badge concept">concept</span>
+
+# Versioning Decision Framework
+
+```
+Does the change alter the sequence of Commands the Workflow executes?
+│
+├── No  (e.g. change Activity logic, update config, add a Signal handler)
+│   └── Safe to redeploy — no versioning needed
+│
+└── Yes  (add, remove, or reorder Activities; change control flow)
+       │
+       How long does the Workflow run relative to your deploy frequency?
+       │
+       ├── Short  (completes before the next deploy)
+       │   └── PINNED  ·  deploy v2, drain is trivial, no patching
+       │
+       ├── Long  (weeks – years)  +  uses Continue-as-New
+       │   └── PINNED  +  upgrade at CaN boundary  ·  no patching
+       │
+       └── Medium – Long  +  does NOT use Continue-as-New
+           └── AUTO_UPGRADE  +  patching  ·  upgrade at next Workflow Task
+```
+
+<div class="note">
+Source: <a href="https://docs.temporal.io/production-deployment/worker-deployments/worker-versioning#decision-guide">Temporal docs — Worker Versioning Decision Guide</a>
+</div>
