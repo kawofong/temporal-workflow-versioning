@@ -371,6 +371,283 @@ NDEs <em>before</em> it reaches production.
 
 # Scenario A
 
+**Business requirement:** reduce fraud API costs by failing fast on credit limit before fraud screening.
+
+Reordering Activity logic in a **short-lived Workflow** (seconds)
+
+---
+
+<span class="badge concept">concept</span>
+
+# Proposed Change in `TransactionAuthWorkflow`
+
+**Request:** run the credit limit check *before* fraud screening to fail fast on the cheaper check and avoid unnecessary fraud API calls.
+
+```python
+# v1 — current order
+fraud_result  = await workflow.execute_activity(check_fraud, ...)
+has_credit    = await workflow.execute_activity(check_credit_limit, ...)
+```
+
+```python
+# v2 — new order
+has_credit    = await workflow.execute_activity(check_credit_limit, ...)
+fraud_result  = await workflow.execute_activity(check_fraud, ...)
+```
+
+There are in-flight transactions, so this change must be deployed safely.
+
+---
+
+<!-- _class: divider -->
+<!-- _paginate: false -->
+<!-- _backgroundColor: #1e3a5f -->
+<!-- _color: #f8fafc -->
+
+# How Would You Approach this New Business Requirement?
+
+Note: `TransactionAuthWorkflow` is a short-lived Workflow that runs for a few seconds.
+
+_Take a moment before proceeding._
+
+---
+
+<span class="badge concept">concept</span>
+
+# Versioning Decision Framework
+
+```
+Does the change alter the sequence of Commands the Workflow executes?
+│
+├── No  (e.g. change Activity logic, update config, add a Signal handler)
+│   └── Safe to redeploy — no versioning needed
+│
+└── Yes  (add, remove, or reorder Activities; change control flow)
+       │
+       How long does the Workflow run relative to your deploy frequency?
+       │
+       ├── Short  (completes before the next deploy)
+       │   └── PINNED  ·  deploy v2, drain is trivial, no patching
+       │
+       ├── Long  (weeks – years)  +  uses Continue-as-New
+       │   └── PINNED  +  upgrade at CaN boundary  ·  no patching
+       │
+       └── Medium – Long  +  does NOT use Continue-as-New
+           └── AUTO_UPGRADE  +  patching  ·  upgrade at next Workflow Task
+```
+
+<div class="note">
+Source: <a href="https://docs.temporal.io/production-deployment/worker-deployments/worker-versioning#decision-guide">Temporal docs — Worker Versioning Decision Guide</a>
+</div>
+
+---
+
+<span class="badge concept">concept</span>
+
+# Decision: Pinned Versioning Behavior
+
+A [**Pinned** Workflow](https://docs.temporal.io/worker-versioning#pinned) is guaranteed to complete on the Worker Deployment Version it started on.
+
+```python
+# Declare on the Workflow class — one line, no other changes needed
+@workflow.defn(versioning_behavior=VersioningBehavior.PINNED)
+class TransactionAuthWorkflow:
+    ...
+```
+
+Pinned works because the **version boundary aligns with the natural Workflow Execution boundary**, either the end of a short-lived run or a Continue-as-New for long-lived ones.
+
+```
+card swipe ──► TransactionAuthWorkflow (v1) ──► done in ~3 s ──┐
+                                                                 │
+                    v2 deployed & activated                       ▼
+                                                            v1 DRAINING
+card swipe ──► TransactionAuthWorkflow (v2) ──► done in ~3 s    │
+                                                                 ▼
+                                                            v1 DRAINED  ✓
+```
+
+<div class="note">
+Pinned Workflows are designed for <strong>rainbow deployments</strong>: old and new worker
+builds run in parallel until the old version drains.
+</div>
+
+---
+
+<span class="badge concept">concept</span>
+
+# [Worker Deployments Versions](https://docs.temporal.io/production-deployment/worker-deployments/worker-versioning#configuring-a-worker-for-versioning)
+
+The Worker announces its version to Temporal Server at startup:
+
+```text
+Worker(
+    client,
+    task_queue="card-task-queue",
+    workflows=[CardWorkflow, ...],
+    deployment_config=WorkerDeploymentConfig(
+        version=WorkerDeploymentVersion(
+            deployment_name="card-service",  # logical service name
+            build_id="v1.0",                 # this exact code version
+        ),
+        use_worker_versioning=True,
+    ),
+)
+```
+
+The server uses `deployment_name:build_id` to route each execution to the correct worker.
+
+---
+
+<span class="badge action">action</span>
+
+# Make the v2 Change in `TransactionAuthWorkflow`
+
+Open `python/workflows/transaction_auth.py` and swap the activity order — credit check before fraud:
+
+```python
+# TODO (v1): comment out the fraud screening and credit limit check
+fraud_result  = await workflow.execute_activity(check_fraud, ...)
+has_credit    = await workflow.execute_activity(check_credit_limit, ...)
+```
+
+```python
+# TODO (v2): uncomment the check_credit_limit and fraud_screening activities
+has_credit    = await workflow.execute_activity(check_credit_limit, ...)
+fraud_result  = await workflow.execute_activity(check_fraud, ...)
+```
+
+---
+
+<span class="badge action">action</span>
+
+# Run the Replay Tests — Observe the Failure
+
+In **Terminal 3**, run:
+
+```bash
+mise run test
+```
+
+<div class="danger">
+tests/test_replay_transaction_auth.py::test_transaction_auth_replay FAILED<br>
+<br>
+NondeterminismError: Activity type check_credit_limit commanded,<br>
+but history has ActivityTaskScheduled for check_fraud.
+</div>
+
+The captured Workflow History was recorded with `check_fraud` first.
+The v2 code emits Command `check_credit_limit` first.
+
+<div class="note">
+Replay tests caught the NDE <strong>before</strong> it reached production.
+</div>
+
+---
+
+<span class="badge action">action</span>
+
+# Start Worker v2 alongside v1 — Rainbow Deployment
+
+Open **Terminal 4** and run the v2 Worker (new code, new build ID):
+
+```bash
+BUILD_ID=v2.0 uv run worker.py
+```
+
+<div class="ok">
+✓  Worker started — deployment=card-service build_id=v2.0
+</div>
+
+Both workers now poll the same task queue simultaneously:
+
+```
+┌──────────────────────────────────────────────────┐
+│   Temporal Server  ·  card-task-queue            │
+└──────────────────────────────────────────────────┘
+        ▲                           ▲
+┌───────────────┐       ┌───────────────────────────┐
+│ Worker v1.0   │       │ Worker v2.0               │
+│ (polling)     │       │ (polling, not yet current) │
+└───────────────┘       └───────────────────────────┘
+ in-flight auths → v1.0      (no new starts yet)
+```
+
+---
+
+<span class="badge action">action</span>
+
+# Activate v2 as the Current Deployment Version
+
+In **Terminal 3**, run:
+
+```bash
+mise run set-current-version v2.0
+```
+
+```bash
+# Verify both versions are tracked
+temporal worker deployment describe --name card-service
+```
+
+<div class="ok">
+✓  card-service:v2.0 — CURRENT<br>
+✓  card-service:v1.0 — DRAINING  (in-flight auth executions completing)
+</div>
+
+<div class="note">
+New card swipes are immediately routed to v2.0 (credit check first).<br>
+Any in-flight v1.0 auth executions complete in seconds — no intervention needed.
+</div>
+
+---
+
+<span class="badge action">action</span>
+
+# Observe New Auth Executions on v2
+
+Watch the Temporal UI or query for recently completed auth executions:
+
+```bash
+# Pick a workflow ID and describe it
+temporal workflow describe -w transaction/auth/<id>
+```
+
+<div class="ok">
+✓  Versioning Info:<br>
+Behavior: Pinned<br>
+Version:  card-service:v2.0
+</div>
+
+New auths run `check_credit_limit` first.
+
+---
+
+<span class="badge action">action</span>
+
+# Confirm v1 Drainage
+
+```bash
+temporal worker deployment describe-version \
+  --deployment-name card-service \
+  --build-id v1.0
+```
+
+<div class="ok">
+✓  DrainageStatus: drained
+</div>
+
+`TransactionAuthWorkflow` completes in seconds. It is safe to stop the v1 Worker process (Terminal 2) after v1 is drained.
+
+---
+
+<!-- _class: divider -->
+<!-- _paginate: false -->
+<!-- _backgroundColor: #1e3a5f -->
+<!-- _color: #f8fafc -->
+
+# Scenario B
+
 **New business requirement:** persist monthly statements to object storage for compliance.
 
 Add a new Activity to a **long-running Entity Workflow** (which uses Continue-as-New)
@@ -565,74 +842,74 @@ This is why we need to version this change.
 
 <span class="badge action">action</span>
 
-# Start Worker v2
+# Start Worker v3 alongside v2 — Rainbow Deployment
 
-Open **Terminal 4** and run the v2 Worker (new code, new build ID):
+Open a new terminal and run the v3 Worker (new code, new build ID). Worker v1 is already drained and decommissioned.
 
 ```bash
-BUILD_ID=v2.0 uv run worker.py
+BUILD_ID=v3.0 uv run worker.py
 ```
 
 <div class="ok">
-✓  INFO:root:Worker started — deployment=card-service build_id=v2.0 task_queue=card-task-queue address=localhost:7233
+✓  INFO:root:Worker started — deployment=card-service build_id=v3.0 task_queue=card-task-queue address=localhost:7233
 </div>
-
-Both workers now poll the same task queue simultaneously:
 
 ```
 ┌──────────────────────────────────────────────────┐
 │   Temporal Server  ·  card-task-queue            │
 └──────────────────────────────────────────────────┘
         ▲                           ▲
-┌───────────────┐       ┌───────────────────────┐
-│ Worker v1.0   │       │ Worker v2.0           │
-│ (polling)     │       │ (polling, not current)│
-└───────────────┘       └───────────────────────┘
-card/acc-001 → v1.0         (no new starts yet)
+┌───────────────┐       ┌───────────────────────────┐
+│ Worker v2.0   │       │ Worker v3.0               │
+│ (polling,     │       │ (polling, not yet current) │
+│  CURRENT)     │       │                            │
+└───────────────┘       └───────────────────────────┘
+ card/acc-* → v2.0           (no new starts yet)
 ```
 
 <div class="note">
-This is a <strong>rainbow deployment</strong>: old and new code run side by side.
+Worker v1.0 is already <strong>drained and decommissioned</strong>. Only v2 and v3 are active.
 </div>
 
 ---
 
 <span class="badge action">action</span>
 
-# Activate v2 as the Current Deployment Version
+# Activate v3 as the Current Deployment Version
 
 ```bash
-mise run set-current-version v2.0
+mise run set-current-version v3.0
 ```
 
 ```bash
-# Verify both versions are tracked
+# Verify all tracked versions
 temporal worker deployment describe --name card-service
 ```
 
 <div class="ok">
-✓  card-service:v2.0 — CURRENT<br>
-✓  card-service:v1.0 — DRAINING  (pinned executions still running)
+✓  card-service:v3.0 — CURRENT<br>
+✓  card-service:v2.0 — DRAINING  (pinned CardWorkflow executions awaiting CaN)<br>
+✓  card-service:v1.0 — DRAINED   (decommissioned)
 </div>
 
 <div class="note">
-<strong>New</strong> Workflow Executions starts on v2.0.<br>
-<strong>Existing</strong> Pinned executions (card/acc-001) stay on v1.0 until they CaN.
+New Workflow Executions start on v3.0.<br>
+Existing Pinned executions (card/acc-*) stay on v2.0 until they reach a CaN boundary.
 </div>
 
 ---
 
 <span class="badge action">action</span>
 
-# Observe the CaN upgrade
+# Observe the CaN Upgrade to v3
 
-Wait for the billing cycle to complete (~30 s). Watch the v1 Worker logs:
+Wait for the billing cycle to complete (~30 s). Watch the v2 Worker logs:
 
 ```
 INFO  New deployment version available — upgrading at cycle N CaN boundary
 ```
 
-Then confirm the new run is on v2:
+Then confirm the new run is on v3:
 
 ```bash
 temporal workflow describe -w card/ACC-001
@@ -640,8 +917,8 @@ temporal workflow describe -w card/ACC-001
 
 <div class="ok">
 ✓  Versioning Info:<br>
-Behavior: Pinned<br>
-Version:  card-service:v2.0
+&nbsp;&nbsp;Behavior: Pinned<br>
+&nbsp;&nbsp;Version:  card-service:v3.0
 </div>
 
 The same Workflow ID — new run, new build, new business logic. No patching.
@@ -650,16 +927,22 @@ The same Workflow ID — new run, new build, new business logic. No patching.
 
 <span class="badge action">action</span>
 
-# Confirm v1 Drainage and Shut Down the v1 Worker
+# Confirm v2 Drainage and Decommission the v2 Worker
 
 ```bash
 temporal worker deployment describe-version \
   --deployment-name card-service \
-  --build-id v1.0
+  --build-id v2.0
 ```
 
 <div class="ok">
 ✓  DrainageStatus: drained
 </div>
 
-Once drained, it is safe to stop the v1 Worker process (Terminal 2).
+Once drained, stop the v2 Worker process. The deployment state is now:
+
+```
+card-service:v3.0 — CURRENT   (all new and upgraded executions)
+card-service:v2.0 — DRAINED   (safe to decommission)
+card-service:v1.0 — DRAINED   (already decommissioned)
+```
