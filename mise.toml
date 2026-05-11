@@ -3,11 +3,11 @@ python = "3.14.4"
 uv = "0.10.12"
 "npm:@marp-team/marp-cli" = "4.4.0"
 
-[tasks."worker:v1"]
-description = "Run Temporal Python worker v1"
+[tasks."worker"]
+description = "Run Temporal Python worker"
+usage = 'arg "[build-id]" help="Worker build ID (default: v1.0)" default="v1.0"'
 dir = "python"
-run = "uv run worker.py"
-env = { BUILD_ID = "v1.0" }
+run = "BUILD_ID=${usage_build_id} uv run worker.py"
 
 [tasks."set-current-version"]
 description = "Set the current worker deployment version"
