@@ -442,3 +442,224 @@ Does the change alter the sequence of Commands the Workflow executes?
 <div class="note">
 Source: <a href="https://docs.temporal.io/production-deployment/worker-deployments/worker-versioning#decision-guide">Temporal docs — Worker Versioning Decision Guide</a>
 </div>
+
+---
+
+<span class="badge concept">concept</span>
+
+# Decision: Pinned Versioning Behavior
+
+A [**Pinned** Workflow]((https://docs.temporal.io/worker-versioning#pinned)) is guaranteed to complete on the Worker Deployment Version, which it started on.
+
+```python
+# Declare on the Workflow class — one line, no other changes needed
+@workflow.defn(versioning_behavior=VersioningBehavior.PINNED)
+class CardWorkflow:
+    ...
+```
+
+<div class="note">
+Pinned Workflows are designed for <strong>rainbow deployments</strong>. Old and new worker
+builds run in parallel until the old version drains completely.
+</div>
+
+---
+
+<span class="badge concept">concept</span>
+
+# Decision: Upgrade on Continue-as-New (CaN)
+
+By default, a Pinned Workflow stays on its original version even across CaN boundaries. With [Upgrade on CaN]((https://docs.temporal.io/production-deployment/worker-deployments/worker-versioning#upgrade-on-continue-as-new)), the **next Workflow Run** may start on the new version.
+
+**How it works:**
+
+1. The current run stays pinned.
+2. The Server notifies the Workflow when a new Target Version is available via `is_target_worker_deployment_version_changed()`
+3. At the CaN boundary, the Workflow opts in to the upgrade
+4. The next run starts on the new version
+
+```python
+def _do_continue_as_new(self, account_id: str, cycle: int) -> None:
+    if workflow.info().is_target_worker_deployment_version_changed(): # new version available
+        workflow.continue_as_new(
+            args=[input],
+            initial_versioning_behavior=ContinueAsNewVersioningBehavior.AUTO_UPGRADE,
+        )  # ← next run lands on the new deployment version; no patching needed
+    ...
+```
+
+<div class="note">
+Sleeping Workflows won't receive the Target-Version-Changed notification
+until they execute a Workflow Task. Send a Signal / Update to wake idle Workflows if needed.
+</div>
+
+---
+
+<span class="badge concept">concept</span>
+
+# [Worker Deployments Versions](https://docs.temporal.io/production-deployment/worker-deployments/worker-versioning#configuring-a-worker-for-versioning)
+
+The Worker announces its version to Temporal Server at startup:
+
+```text
+Worker(
+    client,
+    task_queue="card-task-queue",
+    workflows=[CardWorkflow, ...],
+    deployment_config=WorkerDeploymentConfig(
+        version=WorkerDeploymentVersion(
+            deployment_name="card-service",  # logical service name
+            build_id="v1.0",                 # this exact code version
+        ),
+        use_worker_versioning=True,
+    ),
+)
+```
+
+The server uses `deployment_name:build_id` to route each execution to the correct worker.
+
+---
+
+<span class="badge action">action</span>
+
+# Add Persist Statement Activity in `CardWorkflow`
+
+Open `python/workflows/card.py` and uncomment the `persist_statement` activity call:
+
+```python
+statement = await workflow.execute_activity(generate_statement, ...)
+
+# TODO (v2): store statement in a object storage
+await workflow.execute_activity(persist_statement, ...)
+
+self.rewards_points += int(statement.total_spend)
+```
+
+---
+
+<span class="badge action">action</span>
+
+# Run the Replay Tests — Observe the Failure
+
+In **Terminal 3**, run:
+
+```bash
+mise run test
+```
+
+<div class="danger">
+tests/test_replay_card.py::test_card_workflow_replay_after_can FAILED     [ 33%]<br>
+<br>
+FAILED tests/test_replay_card.py::test_card_workflow_replay_after_can - temporalio.workflow.NondeterminismError: Workflow activation completion fail...
+</div>
+
+The captured Workflow Histories were recorded **without** `persist_statement`.
+The new code now produces a **different Command sequence**. Hence, Replay fails.
+
+<div class="note">
+Replay tests help catch NDEs <strong>before</strong> they reach production.
+This is why we need to version this change.
+</div>
+
+---
+
+<span class="badge action">action</span>
+
+# Start Worker v2
+
+Open **Terminal 4** and run the v2 Worker (new code, new build ID):
+
+```bash
+BUILD_ID=v2.0 uv run worker.py
+```
+
+<div class="ok">
+✓  INFO:root:Worker started — deployment=card-service build_id=v2.0 task_queue=card-task-queue address=localhost:7233
+</div>
+
+Both workers now poll the same task queue simultaneously:
+
+```
+┌──────────────────────────────────────────────────┐
+│   Temporal Server  ·  card-task-queue            │
+└──────────────────────────────────────────────────┘
+        ▲                           ▲
+┌───────────────┐       ┌───────────────────────┐
+│ Worker v1.0   │       │ Worker v2.0           │
+│ (polling)     │       │ (polling, not current)│
+└───────────────┘       └───────────────────────┘
+card/acc-001 → v1.0         (no new starts yet)
+```
+
+<div class="note">
+This is a <strong>rainbow deployment</strong>: old and new code run side by side.
+</div>
+
+---
+
+<span class="badge action">action</span>
+
+# Activate v2 as the Current Deployment Version
+
+```bash
+mise run set-current-version v2.0
+```
+
+```bash
+# Verify both versions are tracked
+temporal worker deployment describe --name card-service
+```
+
+<div class="ok">
+✓  card-service:v2.0 — CURRENT<br>
+✓  card-service:v1.0 — DRAINING  (pinned executions still running)
+</div>
+
+<div class="note">
+<strong>New</strong> Workflow Executions starts on v2.0.<br>
+<strong>Existing</strong> Pinned executions (card/acc-001) stay on v1.0 until they CaN.
+</div>
+
+---
+
+<span class="badge action">action</span>
+
+# Observe the CaN upgrade
+
+Wait for the billing cycle to complete (~30 s). Watch the v1 Worker logs:
+
+```
+INFO  New deployment version available — upgrading at cycle N CaN boundary
+```
+
+Then confirm the new run is on v2:
+
+```bash
+temporal workflow describe -w card/ACC-001
+```
+
+<div class="ok">
+✓  Versioning Info:<br>
+Behavior: Pinned<br>
+Version:  card-service:v2.0
+</div>
+
+The same Workflow ID — new run, new build, new business logic. No patching.
+
+---
+
+<span class="badge action">action</span>
+
+# Confirm v1 Drainage and Shut Down the v1 Worker
+
+```bash
+temporal worker deployment describe-version \
+  --deployment-name card-service \
+  --build-id v1.0
+```
+
+<div class="ok">
+✓  DrainageStatus: drained
+</div>
+
+Once drained, it is safe to stop the v1 Worker process (Terminal 2).
