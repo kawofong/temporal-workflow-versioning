@@ -296,7 +296,7 @@ Leave <strong>Terminal 1</strong> running for the entire session.
 Open **Terminal 2** and run — keep this terminal running:
 
 ```bash
-mise run worker:v1          # BUILD_ID=v1.0 uv run worker.py
+mise run worker          # BUILD_ID=v1.0 uv run worker.py
 ```
 
 <div class="ok">
@@ -552,7 +552,7 @@ Replay tests caught the NDE <strong>before</strong> it reached production.
 Open **Terminal 4** and run the v2 Worker (new code, new build ID):
 
 ```bash
-BUILD_ID=v2.0 uv run worker.py
+mise run worker v2.0    # BUILD_ID=v2.0 uv run worker.py
 ```
 
 <div class="ok">
@@ -628,13 +628,19 @@ New auths run `check_credit_limit` first.
 # Confirm v1 Drainage
 
 ```bash
-temporal worker deployment describe-version \
-  --deployment-name card-service \
-  --build-id v1.0
+temporal worker deployment describe --name card-service
 ```
 
 <div class="ok">
-✓  DrainageStatus: drained
+Worker Deployment:<br>
+  Name                          card-service<br>
+  CurrentVersionDeploymentName  card-service<br>
+  CurrentVersionBuildID         v2.0<br>
+<br>
+Version Summaries:<br>
+  DeploymentName  BuildID  DrainageStatus   CreateTime  <br>
+  card-service    v2.0     unspecified     2 minutes ago<br>
+  card-service    v1.0     draining        4 minutes ago<br>
 </div>
 
 `TransactionAuthWorkflow` completes in seconds. It is safe to stop the v1 Worker process (Terminal 2) after v1 is drained.
@@ -847,7 +853,7 @@ This is why we need to version this change.
 Open a new terminal and run the v3 Worker (new code, new build ID). Worker v1 is already drained and decommissioned.
 
 ```bash
-BUILD_ID=v3.0 uv run worker.py
+mise run worker v3.0    # BUILD_ID=v3.0 uv run worker.py
 ```
 
 <div class="ok">
@@ -887,7 +893,7 @@ temporal worker deployment describe --name card-service
 ```
 
 <div class="ok">
-✓  card-service:v3.0 — CURRENT<br>
+✓  card-service:v3.0 — unspecified<br>
 ✓  card-service:v2.0 — DRAINING  (pinned CardWorkflow executions awaiting CaN)<br>
 ✓  card-service:v1.0 — DRAINED   (decommissioned)
 </div>
@@ -909,17 +915,7 @@ Wait for the billing cycle to complete (~30 s). Watch the v2 Worker logs:
 INFO  New deployment version available — upgrading at cycle N CaN boundary
 ```
 
-Then confirm the new run is on v3:
-
-```bash
-temporal workflow describe -w card/ACC-001
-```
-
-<div class="ok">
-✓  Versioning Info:<br>
-&nbsp;&nbsp;Behavior: Pinned<br>
-&nbsp;&nbsp;Version:  card-service:v3.0
-</div>
+Then confirm the new run is on v3 through the Web UI.
 
 The same Workflow ID — new run, new build, new business logic. No patching.
 
@@ -930,21 +926,26 @@ The same Workflow ID — new run, new build, new business logic. No patching.
 # Confirm v2 Drainage and Decommission the v2 Worker
 
 ```bash
-temporal worker deployment describe-version \
-  --deployment-name card-service \
-  --build-id v2.0
+temporal worker deployment describe --name card-service
 ```
 
 <div class="ok">
-✓  DrainageStatus: drained
+card-service    v2.0     drained         11 minutes ago
 </div>
 
 Once drained, stop the v2 Worker process. The deployment state is now:
 
 ```
-card-service:v3.0 — CURRENT   (all new and upgraded executions)
-card-service:v2.0 — DRAINED   (safe to decommission)
-card-service:v1.0 — DRAINED   (already decommissioned)
+Worker Deployment:
+  Name                          card-service
+  CurrentVersionDeploymentName  card-service
+  CurrentVersionBuildID         v3.0
+
+Version Summaries:
+  DeploymentName  BuildID  DrainageStatus    CreateTime
+  card-service    v3.0     unspecified     3 minutes ago
+  card-service    v2.0     drained         11 minutes ago
+  card-service    v1.0     drained         12 minutes ago
 ```
 
 ---
@@ -1124,7 +1125,7 @@ This is what distinguishes AUTO_UPGRADE + <code>patched()</code> from a naive co
 Open **Terminal 4** and run the v4 Worker. Worker v1 and v2 are already drained and decommissioned.
 
 ```bash
-BUILD_ID=v4.0 uv run worker.py
+mise run worker v4.0    # BUILD_ID=v4.0 uv run worker.py
 ```
 
 <div class="ok">
@@ -1161,7 +1162,7 @@ temporal worker deployment describe --name card-service
 ```
 
 <div class="ok">
-✓  card-service:v4.0 — CURRENT<br>
+✓  card-service:v4.0 — unspecified<br>
 ✓  card-service:v3.0 — DRAINING  (in-flight AUTO_UPGRADE disputes now served by v4)<br>
 ✓  card-service:v2.0 — DRAINED   (decommissioned)<br>
 ✓  card-service:v1.0 — DRAINED   (decommissioned)
@@ -1179,7 +1180,7 @@ AUTO_UPGRADE disputes migrate to v4 at their <strong>next Workflow Task</strong>
 
 Signal an in-flight dispute (started on v3) and describe a newly started dispute:
 
-```bash
+```text
 # Signal an in-flight dispute — it will run on v4 at its next Workflow Task
 temporal workflow signal --workflow-id <existing-dispute-id> \
   --name submit_dispute --input '"unauthorized"'

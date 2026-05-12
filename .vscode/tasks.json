@@ -32,7 +32,7 @@
         {
             "label": "worker-v1",
             "type": "shell",
-            "command": "source ~/.zshrc || mise run worker:v1",
+            "command": "source ~/.zshrc || mise run worker",
             "isBackground": true,
             "dependsOn": ["temporal-server"],
             "problemMatcher": [
